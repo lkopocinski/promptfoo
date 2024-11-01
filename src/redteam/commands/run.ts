@@ -5,7 +5,7 @@ import yaml from 'js-yaml';
 import { z } from 'zod';
 import cliState from '../../cliState';
 import { doEval } from '../../commands/eval';
-import logger from '../../logger';
+import logger, { setLogLevel } from '../../logger';
 import telemetry from '../../telemetry';
 import type { CommandLineOptions, RedteamCliGenerateOptions } from '../../types';
 import { setupEnv } from '../../util';
@@ -14,19 +14,19 @@ import { doGenerateRedteam } from './generate';
 import { redteamInit } from './init';
 
 interface RedteamRunOptions {
-  config?: string;
-  output?: string;
   cache?: boolean;
-  envPath?: string;
-  maxConcurrency?: number;
+  config?: string;
   delay?: number;
-  remote?: boolean;
-  force?: boolean;
+  envPath?: string;
   filterProviders?: string;
   filterTargets?: string;
-
+  force?: boolean;
   // Used by webui
   liveRedteamConfig?: any;
+  maxConcurrency?: number;
+  output?: string;
+  remote?: boolean;
+  verbose?: boolean;
 }
 
 export async function doRedteamRun(options: RedteamRunOptions) {
@@ -55,15 +55,17 @@ export async function doRedteamRun(options: RedteamRunOptions) {
     config: configPath,
     output: redteamPath,
     force: options.force,
+    inRedteamRun: true,
   } as Partial<RedteamCliGenerateOptions>);
 
   // Check if redteam.yaml exists before running evaluation
   if (!fs.existsSync(redteamPath)) {
-    logger.info('No test cases generated. Skipping evaluation.');
+    logger.info('No test cases generated. Skipping scan.');
     return;
   }
 
   // Run evaluation
+  logger.info('Running scan...');
   const { defaultConfig } = await loadDefaultConfig();
   await doEval(
     {
@@ -81,7 +83,7 @@ export async function doRedteamRun(options: RedteamRunOptions) {
     },
   );
 
-  logger.info(chalk.green('\nRed team evaluation complete!'));
+  logger.info(chalk.green('\nRed team scan complete!'));
   logger.info(chalk.blue('To view the results, run: ') + chalk.bold('promptfoo redteam report'));
 }
 
@@ -104,6 +106,7 @@ export function redteamRunCommand(program: Command) {
     )
     .option('--remote', 'Force remote inference wherever possible', false)
     .option('--force', 'Force generation even if no changes are detected', false)
+    .option('--verbose', 'Show debug output', false)
     .option(
       '--filter-providers, --filter-targets <providers>',
       'Only run tests with these providers (regex match)',
@@ -114,6 +117,10 @@ export function redteamRunCommand(program: Command) {
         name: 'redteam run',
       });
       await telemetry.send();
+
+      if (opts.verbose) {
+        setLogLevel('debug');
+      }
 
       try {
         if (opts.remote) {
